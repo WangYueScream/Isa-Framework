@@ -9,7 +9,7 @@ def create_session_id():
 
 
 def get_session_id(request):
-    return request.cookies.get('session_id')
+    return request.cookies.get('session_id', '')
 
 
 class AuthSession:
@@ -41,9 +41,11 @@ class Session:
         self.__header_map__ = {}
         self.__storage_path__ = None
 
+    # 设置会话保存目录
     def set_storage_path(self, path):
         self.__storage_path__ = path
 
+    # 更新或添加记录
     def push(self, request, item, value):
         session_id = get_session_id(request)
         if session in self.__header_map__:
@@ -51,6 +53,8 @@ class Session:
         else:
             self.__header_map__[session_id] = {}
             self.__header_map__[session_id][item] = value
+
+        # 每当会话发生变化，保存到本地
         self.storage(session_id)
 
     # 获取当前会话的某个项
@@ -67,6 +71,7 @@ class Session:
     def map(self, request):
         return self.__header_map__.get(get_session_id(request), {})
 
+    # 加载本地会话记录
     def load_local_session(self):
         if self.__storage_path__ is not None:
             session_path_list = os.listdir(self.__storage_path__)
@@ -77,6 +82,7 @@ class Session:
                 content = base64.decodebytes(rep)
                 self.__header_map__[line] = json.loads(content.decode('utf8'))
 
+    # 保存会话记录到本地
     def storage(self, session_id):
         if self.__storage_path__ is not None:
             with open(os.path.join(self.__storage_path__, session_id), 'wb') as f:
@@ -84,7 +90,7 @@ class Session:
                 f.write(base64.encodebytes(content.encode('utf8')))
                 
     def __call__(self, request, *args, **kwargs):
-        return self.__header_map__[get_session_id(request)]
+        return self.__header_map__.get(get_session_id(request), {})
 
 
 session = Session()

@@ -9,37 +9,41 @@ class CbWebException(Exception):
 
 # 权限不足
 class RequireRootPermission(CbWebException):
-    def __init__(self):
-        self.message = 'Require root index permission'
+    def __init__(self, message='Require root permission'):
+        super.__init__(message)
 
 
 # 端口无效
-class InvalidPort(CbWebException):
-    def __init__(self):
-        self.message = 'Invalid port value, the value must in 0~65535'
+class InvalidPortError(CbWebException):
+    def __init__(self, message='Invalid port value, the value must in 0~65535'):
+        super.__init__(message)
 
 
 # 主机无效
-class InvalidHost(CbWebException):
-    def __init__(self):
-        self.message = 'Invalid host value, require a valid host value'
+class InvalidHostError(CbWebException):
+    def __init__(self, message='Invalid host value, require a valid host value'):
+        super.__init__(message)
 
 
 # 不支持的请求方法
-class InvalidRequestMethod(CbWebException):
-    def __init__(self):
-        self.message = 'Unknown or unsupported request method'
+class InvalidRequestMethodError(CbWebException):
+    def __init__(self, message='Unknown or unsupported request method'):
+        super.__init__(message)
 
 
 # Endpoint 存在
-class EndpointExist(CbWebException):
-    def __init__(self):
-        self.message = 'Endpoint exist'
+class EndpointExistError(CbWebException):
+    def __init__(self, message='Endpoint exist'):
+        super.__init__(message)
 
 
-class TemplateError(CbWebException):
-    def __init__(self, message=None):
-        if message is not None:
-            self.message = message
-        else:
-            self.message = 'Template Format Error'
+# Endpoint 存在
+class URLExistError(CbWebException):
+    def __init__(self, message='URL Exist'):
+        super.__init__(message)
+
+
+# 模版错误
+class TemplateErrorError(CbWebException):
+    def __init__(self, message='Template Format Error'):
+        super.__init__(message)

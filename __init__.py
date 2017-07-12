@@ -4,7 +4,7 @@ import os
 from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
-from cbweb.exceptions import InvalidHost, InvalidPort, EndpointExist, InvalidRequestMethod
+from cbweb.exceptions import InvalidHostError, InvalidPortError, URLExistError, EndpointExistError, InvalidRequestMethodError
 from cbweb.helper import check_host, check_port, parse_static_key
 from cbweb.template_engine.__init import render_template
 from cbweb.wsgi_adapter import wsgi_app
@@ -13,7 +13,10 @@ from cbweb.route import Route
 
 
 ERROR_MAP = {
-    '404': Response('<h1>404 Not Found<h1>', content_type='text/html', status=404)
+    '401': Response('<h1>401 Unknown or unsupported method</h1>', content_type='text/html', status=401),
+    '403': Response('<h1>402 Server Forbidden</h1>', content_type='text/html; charset=UTF-8', status=403),
+    '404': Response('<h1>404 Source Not Found<h1>', content_type='text/html', status=404),
+    '503': Response('<h1>503 Unknown function type</h1>', content_type='text/html; charset=UTF-8',  status=503)
 }
 
 
@@ -64,10 +67,13 @@ class CWApp:
         # 如果 Endpoint 未命名，使用处理函数的名字
         if endpoint is None:
             endpoint = view_func.__name__
+            
+        if url in self.url_maps:
+            raise URLExistError
 
         # 抛出 Endpoint 已存在异常
         if endpoint in self.view_functions and func_type != 'static':
-            raise EndpointExist
+            raise EndpointExistError
 
         # 添加 URL 与 Endpoint 映射
         self.url_maps[url] = endpoint
@@ -116,7 +122,7 @@ class CWApp:
         session.load_local_session()
 
         # 启动
-        run_simple(self.host, self.port, self, use_debugger=self.debug, use_reloader=self.reload, threaded=self.threaded)
+        run_simple(hostname=self.host, port=self.port, application=self, use_debugger=self.debug, use_reloader=self.reload, threaded=self.threaded)
 
     # 静态资源调度入口
     def dispatch_static(self, static_path):
@@ -171,7 +177,7 @@ class CWApp:
                 """ 未知请求方法 """
 
                 raise InvalidRequestMethod
-                #return Response('<h1>Unknown or unsupported method</h1>', content_type='text/html')
+
         elif view_function.func_type == 'view':
             """ 视图处理结果 """
 
@@ -183,7 +189,7 @@ class CWApp:
         else:
             """ 未知类型处理 """
 
-            return Response('<h1>Unknown function type</h1>', content_type='text/html; charset=UTF-8', headers=headers, status=403)
+            return ERROR_MAP['503']
 
         status = 200
         content_type = 'text/html'
