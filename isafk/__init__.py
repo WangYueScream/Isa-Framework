@@ -4,12 +4,12 @@ import os
 from werkzeug.serving import run_simple
 from werkzeug.wrappers import Request, Response
 
-from cbweb.exceptions import InvalidHostError, InvalidPortError, URLExistError, EndpointExistError, InvalidRequestMethodError
-from cbweb.helper import check_host, check_port, parse_static_key
-from cbweb.template_engine.__init import render_template
-from cbweb.wsgi_adapter import wsgi_app
-from cbweb.session import session, create_session_id
-from cbweb.route import Route
+from isafk.exceptions import InvalidHostError, InvalidPortError, URLExistError, EndpointExistError, InvalidRequestMethodError
+from isafk.helper import check_host, check_port, parse_static_key
+from isafk.template_engine.__init import render_template
+from isafk.wsgi_adapter import wsgi_app
+from isafk.session import session, create_session_id
+from isafk.route import Route
 
 
 ERROR_MAP = {
@@ -29,7 +29,7 @@ class ExecFuncMap:
 
 
 # 框架主体
-class CWApp:
+class ISAApp:
     template_folder = None
     static_folder = None
 
@@ -46,11 +46,11 @@ class CWApp:
         self.threaded = False
         self.session_path = session_path
 
-        CWApp.template_folder = os.path.join(os.getcwd(), template_folder)    # 类变量，静态页面文件夹
-        CWApp.static_folder = os.path.join(os.getcwd(), static_folder)    # 类变量，静态资源文件夹
+        ISAApp.template_folder = os.path.join(os.getcwd(), template_folder)    # 类变量，静态页面文件夹
+        ISAApp.static_folder = os.path.join(os.getcwd(), static_folder)    # 类变量，静态资源文件夹
 
-        self.template_folder = CWApp.template_folder    # 实例变量，静态页面文件夹
-        self.static_folder = CWApp.static_folder    # 实例变量，静态资源文件夹
+        self.template_folder = ISAApp.template_folder    # 实例变量，静态页面文件夹
+        self.static_folder = ISAApp.static_folder    # 实例变量，静态资源文件夹
 
     # 重载 setattr
     def __setattr__(self, key, value):
@@ -281,7 +281,7 @@ def redirect(url, status_code=302):
 
 # 默认模版引擎
 def simple_template(path, **options):
-    return render_template(CWApp, path, **options)
+    return render_template(ISAApp, path, **options)
 
 # jinja模版引擎
 jinja_render = None
