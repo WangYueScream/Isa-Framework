@@ -4,7 +4,7 @@ from isafk.dbconnector import BaseDB
 from blueprint.index import user_print
 
 
-db_conn = BaseDB(user='root', password='root,./123', database='shadow_db')
+db_conn = BaseDB(user='Your user', password='Your password', database='Your database')
 app = ISAApp()
 
 app.register_blueprint(user_print)
@@ -23,7 +23,7 @@ def api2(request):
     if checkLogin(request):
 
         def get():
-            ret = db_conn.select('SELECT * FROM t_server_list')
+            ret = db_conn.select('SELECT * FROM %s' % "Your table name")
             if ret.Suc:
                 return ret.Result
             else:
