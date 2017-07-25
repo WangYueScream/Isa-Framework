@@ -1,9 +1,6 @@
 # Isa-Framework
 Python 实现的轻量级 Web 框架
 
-## Author
-c0hb1rd
-
 ## Version
 0.2
 
