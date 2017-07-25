@@ -6,7 +6,7 @@ def wsgi_app(app, environ, start_response):
     # 解析请求头
     request = Request(environ)
 
-    # 处理响应
+    # 把请求传给框架的路由进行处理，并获取处理结果
     response = app.dispatch_request(request)
 
     # 返回给服务器

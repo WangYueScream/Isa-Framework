@@ -10,32 +10,35 @@ class View:
     def dispatch_request(self, request, *args, **option):
         raise NotImplementedError
 
-    # 生成视图处理函数
+    # 生成视图处理函数，参数 name 其实就是节点名
     @classmethod
-    def as_view(cls, name, *class_args, **class_kwargs):
+    def get_func(cls, name):
 
         # 定义处理函数
-        def view(*args, **kwargs):
-            # 实例化视图对象
-            obj = view.view_class(*class_args, **class_kwargs)
+        def func(*args, **kwargs):
+            # 在处理函数内部实例化视图对象
+            obj = func.view_class()
 
-            # 返回视图处理结果
+            # 通过视图对象调用处理函数调度入口，返回视图处理结果
             return obj.dispatch_request(*args, **kwargs)
 
         # 为处理函数绑定属性
-        view.view_class = cls
-        view.__name__ = name
-        view.__doc__ = cls.__doc__
-        view.__module__ = cls.__module__
-        view.methods = cls.methods
-        return view
+        func.view_class = cls
+        func.__name__ = name
+        func.__doc__ = cls.__doc__
+        func.__module__ = cls.__module__
+        func.methods = cls.methods
+
+        # 返回这个处理函数
+        return func
 
 
-# 蓝图基类
-class Blueprint:
-    def __init__(self, name, url_maps):
-        self.url_maps = url_maps
-        self.name = name
+# 控制器类
+class Controller:
+    def __init__(self, name, url_map):
+        self.url_map = url_map  # 存放映射关系，一个元素为 Dict 的 List
+        self.name = name  # 控制器名字，生成节点时是会用到，为了区分不同控制器下同名的视图对象
 
     def __name__(self):
+        # 返回控制器名字
         return self.name

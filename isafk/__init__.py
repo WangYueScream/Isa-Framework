@@ -1,287 +1,311 @@
+#!/usr/local/bin/python3
+# coding:utf-8
 import json
 import os
 
-from werkzeug.serving import run_simple
-from werkzeug.wrappers import Request, Response
-
-from isafk.exceptions import InvalidHostError, InvalidPortError, URLExistError, EndpointExistError, InvalidRequestMethodError
-from isafk.helper import check_host, check_port, parse_static_key
-from isafk.template_engine.__init import render_template
-from isafk.wsgi_adapter import wsgi_app
-from isafk.session import session, create_session_id
+import isafk.exceptions as exceptions
+from isafk.helper import parse_static_key
 from isafk.route import Route
+from werkzeug.serving import run_simple
+from werkzeug.wrappers import Response
 
+from isafk.wsgi_adapter import wsgi_app
 
-ERROR_MAP = {
-    '401': Response('<h1>401 Unknown or unsupported method</h1>', content_type='text/html', status=401),
-    '403': Response('<h1>402 Server Forbidden</h1>', content_type='text/html; charset=UTF-8', status=403),
-    '404': Response('<h1>404 Source Not Found<h1>', content_type='text/html', status=404),
-    '503': Response('<h1>503 Unknown function type</h1>', content_type='text/html; charset=UTF-8',  status=503)
-}
+from isafk.template_engine import replace_template
+
+from isafk.session import create_session_id, session
 
 
 # 处理函数数据结构
-class ExecFuncMap:
+class ExecFunc:
     def __init__(self, func, func_type, **options):
-        self.func = func
-        self.options = options
-        self.func_type = func_type
+        self.func = func  # 处理函数
+        self.options = options  # 附带参数
+        self.func_type = func_type  # 函数类型
 
 
-# 框架主体
+# 我这里以实验楼名字缩写命名框架名字： “实验楼 Framework”
 class ISAApp:
+
+    # 类属性，模版文件本地存放目录
     template_folder = None
-    static_folder = None
 
-    def __init__(self, template_folder='template', static_folder='static', session_path='.session'):
-        self.host = '127.0.0.1'    # 应用绑定的主机
-        self.port = 5000    # 应用监听的端口
-        self.url_maps = {}    # 存放 URL 与 Endpoint 的映射
-        self.view_functions = {}    # 存放 Endpoint 与请求处理函数的映射
-        self.static_maps = {}    # 存放 URL 与 静态资源的映射
-        self.debug = False    # 调试模式
-        self.reload = False    # 是否重加载
-        self.domain = ''    # 应用主域 URL
-        self.route = Route(self)    # 路由
-        self.threaded = False
-        self.session_path = session_path
-
-        ISAApp.template_folder = os.path.join(os.getcwd(), template_folder)    # 类变量，静态页面文件夹
-        ISAApp.static_folder = os.path.join(os.getcwd(), static_folder)    # 类变量，静态资源文件夹
-
-        self.template_folder = ISAApp.template_folder    # 实例变量，静态页面文件夹
-        self.static_folder = ISAApp.static_folder    # 实例变量，静态资源文件夹
-
-    # 重载 setattr
-    def __setattr__(self, key, value):
-        """ 当为 debug 或者 reload 赋值时，直接赋值到两个变量上 """
-
-        if key in ['debug', 'reload']:
-            object.__setattr__(self, 'debug', value)
-            object.__setattr__(self, 'reload', value)
-        object.__setattr__(self, key, value)
+    # 实例化方法
+    def __init__(self, static_folder='static', template_folder="template", session_path='.session'):
+        self.host = '127.0.0.1'  # 默认主机
+        self.port = 8081  # 默认端口
+        self.url_map = {}  # 存放 URL 与 Endpoint 的映射
+        self.static_map = {}  # 存放 URL 与 静态资源的映射
+        self.function_map = {}  # 存放 Endpoint 与请求处理函数的映射
+        self.static_folder = static_folder  # 静态资源本地存放路径，默认放在应用所在目录的 static 文件夹下
+        self.route = Route(self)  # 路由装饰器
+        self.template_folder = template_folder  # 模版文件本地存放路径，默认放在应用所在目录的 template 目录下
+        ISAApp.template_folder = self.template_folder  # 为类的 template_folder 也初始化，供上面的置换模版引擎调用
+        self.session_path = session_path  # 会话记录默认存放在应用同目录下的 .session 文件夹中
 
     # 添加路由规则
-    def add_url_rule(self, url, view_func=None, func_type='view', endpoint=None, **options):
+    @exceptions.capture
+    def add_url_rule(self, url, func, func_type, endpoint=None, **options):
 
-        # 如果 Endpoint 未命名，使用处理函数的名字
+        # 如果节点未命名，使用处理函数的名字
         if endpoint is None:
-            endpoint = view_func.__name__
-            
-        if url in self.url_maps:
-            raise URLExistError
+            endpoint = func.__name__
 
-        # 抛出 Endpoint 已存在异常
-        if endpoint in self.view_functions and func_type != 'static':
-            raise EndpointExistError
+        # 抛出 URL 已存在异常
+        if url in self.url_map:
+            raise exceptions.URLExistsError
 
-        # 添加 URL 与 Endpoint 映射
-        self.url_maps[url] = endpoint
+        # 如果类型不是静态资源，并且节点已存在，则抛出节点已存在异常
+        if endpoint in self.function_map and func_type != 'static':
+            raise exceptions.EndpointExistsError
 
-        # 添加 Endpoint 与请求处理函数映射
-        self.view_functions[endpoint] = ExecFuncMap(view_func, func_type, **options)
+        # 添加 URL 与节点映射
+        self.url_map[url] = endpoint
 
-    # 添加视图规则
-    def add_view(self, url, view_class, endpoint):
-        self.add_url_rule(url, view_func=view_class.as_view(endpoint), func_type='view')
+        # 添加节点与请求处理函数映射
+        self.function_map[endpoint] = ExecFunc(func, func_type, **options)
 
     # 添加静态资源
     def add_source(self, path):
-        with open(path, 'r') as f:
+        # 读取文件内容
+        with open(path, 'rb') as f:
             rep = f.read()
-        key = parse_static_key(path)
-        self.static_maps[key] = rep
 
-    # 应用启动入口
-    def run(self, **options):
+        # 绑定路径与文件内容
+        self.static_map[path] = rep
 
-        # 加载配置参数
-        for key, value in options.items():
-            if value is not None:
-                self.__setattr__(key, value)
-
-        # 检查主机是否有效
-        self.__throw_host_error()
-
-        # 检查端口是否有效
-        self.__throw_port_error()
-
-        # 建立主域 URL
-        self.domain = 'http://' + self.host + ':' + str(self.port)
-
-        # 映射静态资源
-        self.add_static_rule(self.static_folder)
-
-        # 映射静态资源处理函数
-        self.view_functions['static'] = ExecFuncMap(func=self.dispatch_static, func_type='static')
-
-        # 加载本地缓存 session 记录
-        if not os.path.exists(self.session_path):
-            os.mkdir(self.session_path)
-        session.set_storage_path(self.session_path)
-        session.load_local_session()
-
-        # 启动
-        run_simple(hostname=self.host, port=self.port, application=self, use_debugger=self.debug, use_reloader=self.reload, threaded=self.threaded)
-
-    # 静态资源调度入口
-    def dispatch_static(self, static_path):
-        key = parse_static_key(static_path)
-        if key in self.static_maps:
-            if key == 'css':
-                doc_type = 'text/css'
-            elif key == 'js':
-                doc_type = 'text/js'
-            else:
-                doc_type = 'text/plain'
-            return Response(self.static_maps[key], content_type=doc_type)
-        else:
-            return ERROR_MAP['404']
-
-    # 应用请求处理函数调度入口
-    def dispatch_request(self, request):
-        # 获取请求对应的 Endpoint
-        url = "/" + "/".join(request.url.split("/")[3:])
-
-        if url.find('static') == 1 and url.index('static') == 1:
-            endpoint = 'static'
-        else:
-            endpoint = self.url_maps.get(url, None)
-
-        # 如果 Endpoint 不存在 返回 404
-        if endpoint is None:
-            return ERROR_MAP['404']
-
-        # 获取 Endpoint 对应的执行函数
-        view_function = self.view_functions[endpoint]
-
-        if 'session_id' not in request.cookies:
-            headers = {'set-cookie': 'session_id=%s' % create_session_id(), 'Server': 'CCWEB 0.1'}
-        else:
-            headers = {'Server': 'CCWEB 0.1'}
-
-
-        # 判断执行函数类型
-        if view_function.func_type == 'route':
-            """ 路由处理 """
-
-            # 判断请求方法是否支持
-            if request.method in view_function.options.get('methods'):
-                """ 路由处理结果 """
-                argscount = view_function.func.__code__.co_argcount
-                if argscount > 0:
-                    rep = view_function.func(request)
-                else:
-                    rep = view_function.func()
-            else:
-                """ 未知请求方法 """
-
-                raise InvalidRequestMethod
-
-        elif view_function.func_type == 'view':
-            """ 视图处理结果 """
-
-            rep = view_function.func(request)
-        elif view_function.func_type == 'static':
-            """ 静态逻辑处理 """
-
-            return view_function.func(url)
-        else:
-            """ 未知类型处理 """
-
-            return ERROR_MAP['503']
-
-        status = 200
-        content_type = 'text/html'
-        
-        if isinstance(rep, tuple):
-            kind = rep[-1]
-            if kind == 'redirect':
-                url = rep[0]
-                status = rep[1]
-                response = Response('<script> window.location.href = "%s"</script>' % url, status=status, content_type='text/html')
-                response.headers['Location'] = url
-                return response
-            elif kind == 'file':
-                filename = rep[0]
-                file_content = rep[1]
-                response = Response(file_content, content_type='text/file')
-                response.headers['Content-Length'] = len(file_content)
-                response.headers['Content-Disposition'] = 'attachment; filename="%s"' % filename
-                return response
-            else:
-                return ERROR_MAP['404']
-        elif isinstance(rep, dict) or isinstance(rep, list) and isinstance(rep[0], dict):
-            rep = json.dumps(rep)
-            content_type = 'application/json'
-        else:
-            rep = str(rep)
-
-        return Response(rep, content_type='%s; charset=UTF-8' % content_type, headers=headers, status=status)
-
-    # WSGI 调度框架入口
-    def wsgi_app(self, environ, start_response):
-        # 解析请求头
-        request = Request(environ)
-
-        # 获取请求处理结果
-        response = self.dispatch_request(request)
-
-        # 返回给 WSGI
-        return response(environ, start_response)
-
-    # 蓝图注册
-    def register_blueprint(self, blueprint):
-        # 添加对应蓝图中的视图
-        name = blueprint.__name__()
-        for line in blueprint.url_maps:
-            self.add_view(line['url'], line['view'], name + '.' + line['endpoint'])
-
-    # 加载静态资源
+    # 递归添加静态资源规则
     def add_static_rule(self, path):
+
+        # 判断本地资源路径是否存在，如果不存在则直接退出
         if not os.path.exists(path):
             return
+
+        # 列出所有目录
         for line in os.listdir(path):
+            # 如果为文件夹，则循环递归
             if os.path.isdir(os.path.join(path, line)):
                 self.add_static_rule(os.path.join(path, line))
+            # 如果为文件，则添加规则
             else:
                 self.add_source(os.path.join(path, line))
 
-    # App 调度入口
+    # 添加视图规则
+    def bind_view(self, url, view_class, endpoint):
+        self.add_url_rule(url, func=view_class.get_func(endpoint), func_type='view')
+
+    # 静态资源调路由
+    @exceptions.capture
+    def dispatch_static(self, static_path):
+        # 获取资源文件后缀
+        key = parse_static_key(static_path)
+
+        # 判断资源文件是否在静态资源规则中，如果不存在，抛出页面未找到异常
+        if static_path in self.static_map:
+            if key == 'css':  # 文件类型为 CSS
+                doc_type = 'text/css'
+            elif key == 'js':  # 文件类型为 JS
+                doc_type = 'text/js'
+            elif key == 'png':  # 文件类型为 PNG 图片
+                doc_type = 'image/png'
+            elif key == 'jpg' or key == 'jpeg':  # 文件类型为 JPG 或者 JPEG 图片
+                doc_type = 'image/jpeg'
+            else:  # 其它类型文件统一以文本返回
+                doc_type = 'text/plain'
+
+            # 封装并返回响应体
+            return Response(self.static_map[static_path], content_type=doc_type)
+        else:
+            # 抛出页面未找到异常
+            raise exceptions.PageNotFoundError
+
+    # 启动入口
+    def run(self, host=None, port=None, **options):
+        # 如果有参数进来且值不为空，则赋值
+        for key, value in options.items():
+            if value is not None:
+                object.__setattr__(self, key, value)
+
+        self.add_static_rule(self.static_folder)
+
+        # 映射静态资源处理函数，所有静态资源处理函数都是静态资源路由
+        self.function_map['static'] = ExecFunc(func=self.dispatch_static, func_type='static')
+
+        if not os.path.exists(self.session_path):
+            os.mkdir(self.session_path)
+
+            # 设置会话记录存放目录
+        session.set_storage_path(self.session_path)
+
+        # 加载本地缓存的 session 记录
+        session.load_local_session()
+
+        # 把框架本身也就是应用本身和其它几个配置参数传给 werkzeug 的 run_simple
+        run_simple(hostname=self.host, port=self.port, application=self, **options)
+
+    # URL 路由
+    @exceptions.capture
+    def dispatch_request(self, request):
+        # 去掉 URL 中 域名部分，也就从 http://xxx.com/path/file 中提取 path/file 这部分
+        url = "/" + "/".join(request.url.split("/")[3:]).split("?")[0]
+
+        # 通过 URL 寻找节点名
+        if url.find(self.static_folder) == 1 and url.index(self.static_folder) == 1:
+            # 如果 URL 以静态资源文件夹名首目录，则资源为静态资源，节点定义为 static
+            endpoint = 'static'
+            url = url[1:]
+        else:
+            # 若不以 static 为首，则从 URL 与 节点的映射表中获取节点
+            endpoint = self.url_map.get(url, None)
+
+        cookies = request.cookies
+
+        # 如果 session_id 这个键不在 cookies 中，则通知客户端设置 Cookie
+        if 'session_id' not in cookies:
+            headers = {
+                'Set-Cookie': 'session_id=%s' % create_session_id(),    # 定义 Set-Cookie属性，通知客户端记录 Cookie，create_session_id 是生成一个无规律唯一字符串的方法
+                'Server': 'Shiyanlou Framework'  # 定义响应报头的 Server 属性
+            }
+        else:
+            # 定义响应报头的 Server 属性
+            headers = {
+                'Server': 'Shiyanlou Framework'
+            }
+
+        # 如果节点为空，抛出页面未找到异常
+        if endpoint is None:
+            raise exceptions.PageNotFoundError
+
+        # 获取节点对应的执行函数
+        exec_function = self.function_map[endpoint]
+
+        # 判断执行函数类型
+        if exec_function.func_type == 'route':
+            """ 路由处理 """
+
+            # 判断请求方法是否支持
+            if request.method in exec_function.options.get('methods'):
+                """ 路由处理结果 """
+
+                # 判断路由的执行函数是否需要请求体进行内部处理
+                argcount = exec_function.func.__code__.co_argcount
+
+                if argcount > 0:
+                    # 需要附带请求体进行结果处理
+                    rep = exec_function.func(request)
+                else:
+                    # 不需要附带请求体进行结果处理
+                    rep = exec_function.func()
+            else:
+                """ 未知请求方法 """
+
+                # 抛出请求方法不支持异常
+                raise exceptions.InvalidRequestMethodError
+
+        elif exec_function.func_type == 'view':
+            """ 视图处理结果 """
+
+            # 所有视图处理函数都需要附带请求体来获取处理结果
+            rep = exec_function.func(request)
+        elif exec_function.func_type == 'static':
+            """ 静态逻辑处理 """
+
+            # 静态资源返回的是一个预先封装好的响应体，所以直接返回
+            return exec_function.func(url)
+        else:
+            """ 未知类型处理 """
+
+            # 抛出未知处理类型异常
+            raise exceptions.UnknownFuncError
+
+        # 定义 200 状态码表示成功
+        status = 200
+        # 定义响应体类型
+        content_type = 'text/html'
+
+        # 判断如果返回值是一个 Response 类型，则直接放回
+        if isinstance(rep, Response):
+            return rep
+
+        # 返回响应体
+        return Response(rep, content_type='%s; charset=UTF-8' % content_type, headers=headers, status=status)
+
+    # 控制器加载
+    def load_controller(self, controller):
+
+        # 获取控制器名字
+        name = controller.__name__()
+
+        # 遍历控制器的 `url_map` 成员
+        for rule in controller.url_map:
+            # 绑定 URL 与 视图对象，最后的节点名格式为 `控制器名` + "." + 定义的节点名
+            self.bind_view(rule['url'], rule['view'], name + '.' + rule['endpoint'])
+
     def __call__(self, environ, start_response):
         return wsgi_app(self, environ, start_response)
 
-    # 主机取值检查
-    def __throw_host_error(self):
-        if not check_host(self.host):
-            raise InvalidHost()
 
-    # 端口取值检查
-    def __throw_port_error(self):
-        if not check_port(self.port):
-            raise InvalidPort()
-        
-
-def render_file(file_path, file_name=None):
-    content = None
-    if os.path.exists(file_path):
-        with open(file_path, 'rb') as f:
-            content = f.read()
-    
-    if filename is None:
-        filename = file_path.split("/")[-1]
-    file_size = os.path.getsize(file_path)
-            
-    return filename, content, 'file'
-
-
-def redirect(url, status_code=302):
-    return url, status_code, 'redirect'
-
-
-# 默认模版引擎
+# 模版引擎接口
 def simple_template(path, **options):
-    return render_template(ISAApp, path, **options)
+    return replace_template(ISAApp, path, **options)
 
-# jinja模版引擎
-jinja_render = None
+
+# URL 重定向方法
+def redirect(url, status_code=302):
+    # 定义一个响应体
+    response = Response('', status=status_code)
+
+    # 为响应体的报头中的 Location 参数与 URL 进行绑定 ，通知客户端自动跳转
+    response.headers['Location'] = url
+
+    # 返回响应体
+    return response
+
+
+# 封装 JSON 数据响应包
+def render_json(data):
+    # 定义默认文件类型为纯文本
+    content_type = "text/plain"
+
+    # 如果是 Dict 或者 List 类型，则开始转换为 JSON 格式数据
+    if isinstance(data, dict) or isinstance(data, list):
+
+        # 将 data 转换为 JSON 数据格式
+        data = json.dumps(data)
+
+        # 定义文件类型为 JSON 格式
+        content_type = "application/json"
+
+    # 返回封装完的响应体
+    return Response(data, content_type="%s; charset=UTF-8" % content_type, status=200)
+
+
+# 返回让客户端保存文件到本地的响应体
+@exceptions.capture
+def render_file(file_path, file_name=None):
+
+    # 判断服务器是否有该文件，抛出文件不存在异常
+    if os.path.exists(file_path):
+
+        # 判断是否有读取权限，没有则抛出权限不足异常
+        if not os.access(file_path, os.R_OK):
+            raise exceptions.RequireReadPermissionError
+
+        # 读取文件内容
+        with open(file_path, "rb") as f:
+            content = f.read()
+
+        # 如果没有设置文件名，则以 “/” 分割路径取最后一项最为文件名
+        if file_name is None:
+            file_name = file_path.split("/")[-1]
+
+        # 封装响应报头，指定为附件类型，并定义下载的文件名
+        headers = {
+            'Content-Disposition': 'attachment; filename="%s"' % file_name
+        }
+
+        # 返回响应体
+        return Response(content, headers=headers, status=200)
+
+    # 如果不存在该文件，抛出文件不存在异常
+    raise exceptions.FileNotExistsError

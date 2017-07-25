@@ -1,11 +1,11 @@
-from isafk import redirect, session, simple_template
+from isafk import redirect, session, simple_template, render_json
 from core.base_view import BaseView
 from core.base_view import SessionView
 
 
 class Index(SessionView):
     def get(self, request, *args, **options):
-        user = session.get_item(request, 'user')
+        user = session.get(request, 'user')
         return simple_template('index/index.html', user=user, hello='你好，', world="世界")
 
     def post(self, request, *args, **options):
@@ -36,4 +36,4 @@ class Logout(SessionView):
 
 class JsonTest(SessionView):
     def get(self, request, *args, **options):
-        return [{'Hello': "world"}]
+        return render_json({'Hello': 'World'})

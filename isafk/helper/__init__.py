@@ -1,4 +1,5 @@
-import re
+def parse_static_key(filename):
+    return filename.split(".")[-1]
 
 
 def list_filter(obj, func):
@@ -23,21 +24,3 @@ def check_port(port):
     if 0 <= port <= 65535:
         return True
     return False
-
-
-def match_args(rule):
-    pattern = r'<(.*?)>'
-    comp = re.compile(pattern)
-    rules = rule.split(r"/")[1:]
-    ret = []
-    for r in rules:
-        ret.append(comp.search(r).groups()[0])
-
-    return ret
-
-
-def parse_static_key(key):
-    return key.split(".")[-1]
-
-
-
