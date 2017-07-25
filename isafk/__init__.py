@@ -126,6 +126,12 @@ class ISAApp:
             if value is not None:
                 object.__setattr__(self, key, value)
 
+        if host:
+            self.host = host
+
+        if port:
+            self.port = port
+
         self.add_static_rule(self.static_folder)
 
         # 映射静态资源处理函数，所有静态资源处理函数都是静态资源路由
