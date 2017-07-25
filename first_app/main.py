@@ -4,8 +4,7 @@ from isafk.dbconnector import BaseDB
 from controller.index import user_controller
 
 
-#db_conn = BaseDB(user='Your user', password='Your password', database='Your database')
-db_conn = BaseDB(user='root', password='root,./123', database='shadow_db')
+db_conn = BaseDB(user='Your user', password='Your password', database='Your database')
 app = ISAApp()
 
 
@@ -24,7 +23,7 @@ def api2(request):
     if checkLogin(request):
 
         def get():
-            ret = db_conn.execute('SELECT * FROM %s' % "t_server_list")
+            ret = db_conn.execute('SELECT * FROM %s' % "table")
             if ret.suc:
                 return render_json(ret.result)
             else:
