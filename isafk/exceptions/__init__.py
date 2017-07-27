@@ -66,13 +66,10 @@ class UnknownFuncError(SYLFkException):
         super(UnknownFuncError, self).__init__(code, message)
 
 
-# 异常处理重载装饰器，参数为异常编号，需要注意的是这里的编号为了方便开发者所以用的是整形
 def reload(code):
     def decorator(f):
-        # 替换 ERROR_MAP 中 异常编号关联的处理逻辑为所装饰的函数
         ERROR_MAP[str(code)] = f
 
-    # 返回装饰器
     return decorator
 
 

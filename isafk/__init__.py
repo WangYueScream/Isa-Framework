@@ -24,6 +24,15 @@ class ExecFunc:
         self.func_type = func_type  # 函数类型
 
 
+TYPE_MAP = {
+    'css':  'text/css',
+    'js': 'text/js',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg'
+}
+
+
 # 我这里以实验楼名字缩写命名框架名字： “实验楼 Framework”
 class ISAApp:
 
@@ -65,30 +74,6 @@ class ISAApp:
         # 添加节点与请求处理函数映射
         self.function_map[endpoint] = ExecFunc(func, func_type, **options)
 
-    # 添加静态资源
-    def add_source(self, path):
-        # 读取文件内容
-        with open(path, 'rb') as f:
-            rep = f.read()
-
-        # 绑定路径与文件内容
-        self.static_map[path] = rep
-
-    # 递归添加静态资源规则
-    def add_static_rule(self, path):
-
-        # 判断本地资源路径是否存在，如果不存在则直接退出
-        if not os.path.exists(path):
-            return
-
-        # 列出所有目录
-        for line in os.listdir(path):
-            # 如果为文件夹，则循环递归
-            if os.path.isdir(os.path.join(path, line)):
-                self.add_static_rule(os.path.join(path, line))
-            # 如果为文件，则添加规则
-            else:
-                self.add_source(os.path.join(path, line))
 
     # 添加视图规则
     def bind_view(self, url, view_class, endpoint):
@@ -101,20 +86,14 @@ class ISAApp:
         key = parse_static_key(static_path)
 
         # 判断资源文件是否在静态资源规则中，如果不存在，抛出页面未找到异常
-        if static_path in self.static_map:
-            if key == 'css':  # 文件类型为 CSS
-                doc_type = 'text/css'
-            elif key == 'js':  # 文件类型为 JS
-                doc_type = 'text/js'
-            elif key == 'png':  # 文件类型为 PNG 图片
-                doc_type = 'image/png'
-            elif key == 'jpg' or key == 'jpeg':  # 文件类型为 JPG 或者 JPEG 图片
-                doc_type = 'image/jpeg'
-            else:  # 其它类型文件统一以文本返回
-                doc_type = 'text/plain'
+        if os.path.exists(static_path):
+
+            doc_type = TYPE_MAP.get(key, 'text/plain')
+            with open(static_path, 'rb') as f:
+                rep = f.read()
 
             # 封装并返回响应体
-            return Response(self.static_map[static_path], content_type=doc_type)
+            return Response(rep, content_type=doc_type)
         else:
             # 抛出页面未找到异常
             raise exceptions.PageNotFoundError
@@ -131,8 +110,6 @@ class ISAApp:
 
         if port:
             self.port = port
-
-        self.add_static_rule(self.static_folder)
 
         # 映射静态资源处理函数，所有静态资源处理函数都是静态资源路由
         self.function_map['static'] = ExecFunc(func=self.dispatch_static, func_type='static')
