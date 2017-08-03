@@ -26,6 +26,8 @@ class Session:
         # 会话本地存放目录
         self.__storage_path__ = None
 
+        self.ignore_key = []
+
     # 设置会话保存目录
     def set_storage_path(self, path):
         self.__storage_path__ = path
@@ -37,15 +39,19 @@ class Session:
 
         # 如果已设置 Session 会话存放路径，则开始缓存到本地
         if self.__storage_path__ is not None:
+            data = {}
+            for key, v in self.__session_map__[session_id].items():
+                if key not in self.ignore_key:
+                    data[key] = v
             with open(session_path, 'wb') as f:
                 # 将会话记录序列化为字符串
-                content = json.dumps(self.__session_map__[session_id])
+                content = json.dumps(data)
 
                 # 进行 base64 编码再写入文件中，防止一些特定二进制数据无法正确写入
                 f.write(base64.encodebytes(content.encode()))
 
     # 更新或添加记录
-    def push(self, request, item, value):
+    def push(self, request, item, value, is_save=True):
 
         # 从请求中获取客户端的 Session ID
         session_id = get_session_id(request)
@@ -61,8 +67,11 @@ class Session:
             # 对当前会话添加数据
             self.__session_map__[session_id][item] = value
 
-        # 会话发生变化，更新缓存到本地
-        self.storage(session_id)
+        if is_save:
+            # 会话发生变化，更新缓存到本地
+            self.storage(session_id)
+        else:
+            self.ignore_key.append(item)
 
     # 删除当前会话的某个项
     def pop(self, request, item, value=True):

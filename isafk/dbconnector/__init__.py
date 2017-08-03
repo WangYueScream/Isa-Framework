@@ -132,5 +132,3 @@ class BaseDB:
     def choose_db(self, db_name):
         self.conn.select_db(db_name)
         return None, None
-
-
